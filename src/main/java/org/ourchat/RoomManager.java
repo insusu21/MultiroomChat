@@ -46,7 +46,7 @@ public class RoomManager {
         Message welcome = new Message("SYSTEM_NOTICE", "'" + roomName + "' 방에 입장했습니다.");
         session.sendMessage(welcome.toJson(gson));
 
-        Message joinNotice = new Message("SYSTEM_NOTICE", session.getUserId() + "님이 입장했습니다.");
+        Message joinNotice = new Message("SYSTEM_NOTICE", "[" + roomName + "] " + session.getUserId() + "님이 입장했습니다.");
         broadcastToRoom(room, joinNotice);
 
         return isNewRoom;
