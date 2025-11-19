@@ -23,13 +23,15 @@ public class RoomManager {
     }
 
     // 2. 방 입장/생성
-    public void joinRoom(ClientSession session, String roomName) {
+    public boolean joinRoom(ClientSession session, String roomName) {
         // 닉네임이 없으면 방에 참가할 수 없음
         if (session.getUserId() == null || session.getUserId().isEmpty()) {
             Message error = new Message("ERROR", "닉네임을 먼저 설정해야 합니다.");
             session.sendMessage(error.toJson(gson));
-            return;
+            return false;
         }
+
+        boolean isNewRoom = !rooms.containsKey(roomName);
 
         // 이미 다른 방에 있다면, 그 방에서 먼저 나옴
         leaveRoom(session);
@@ -48,6 +50,8 @@ public class RoomManager {
         // 2. 방에 있는 다른 사람들에게 알림
         Message joinNotice = new Message("SYSTEM_NOTICE", session.getUserId() + "님이 입장했습니다.");
         broadcastToRoom(session, joinNotice, false); // '나'를 제외하고 전송
+
+        return isNewRoom;
     }
 
     // 3. 채팅 메시지 처리
@@ -67,15 +71,15 @@ public class RoomManager {
     }
 
     // 4. 연결 종료 처리
-    public void handleDisconnect(ClientSession session) {
-        if (session == null) return;
+    public boolean handleDisconnect(ClientSession session) {
+        if (session == null) return false;
 
         // 방에서 나감
-        leaveRoom(session);
+        return leaveRoom(session);
     }
 
     // (내부 헬퍼) 방에서 나가는 로직
-    private void leaveRoom(ClientSession session) {
+    private boolean leaveRoom(ClientSession session) {
         Room room = session.getCurrentRoom();
         if (room != null) {
             room.leave(session);
@@ -88,8 +92,10 @@ public class RoomManager {
             // 방이 비었으면 방을 제거
             if (room.isEmpty()) {
                 rooms.remove(room.getRoomName());
+                return true;
             }
         }
+        return false;
     }
 
     // (내부 헬퍼) 방에 메시지 브로드캐스트
@@ -109,5 +115,10 @@ public class RoomManager {
                 }
             }
         }
+    }
+
+    // 모든 방의 이름 목록 반환
+    public java.util.Set<String> getRoomNames() {
+        return rooms.keySet();
     }
 }

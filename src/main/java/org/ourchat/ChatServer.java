@@ -30,13 +30,20 @@ public class ChatServer extends WebSocketServer {
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         sessionManager.createSession(conn); // '접수처'에서 세션 생성
         System.out.println("새 클라이언트 연결됨: " + conn.getRemoteSocketAddress());
+
+        Message roomListMsg = new Message("ROOM_LIST", roomManager.getRoomNames());
+        conn.send(roomListMsg.toJson(gson)); // 새로 로그인한 사람한테 리스트 전송
     }
 
     @Override
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
         ClientSession session = sessionManager.removeSession(conn); // '접수처'에서 세션 제거
         if (session != null) {
-            roomManager.handleDisconnect(session); // '총괄 매니저'에게 연결 종료 알림
+            boolean roomDeleted = roomManager.handleDisconnect(session); // '총괄 매니저'에게 연결 종료 알림
+
+            if (roomDeleted) {
+                broadcastRoomList();
+            }
         }
         System.out.println("클라이언트 연결 끊김: " + conn.getRemoteSocketAddress());
     }
@@ -56,7 +63,10 @@ public class ChatServer extends WebSocketServer {
                     roomManager.setNickname(session, msg.getPayloadAsString());
                     break;
                 case "JOIN_ROOM":
-                    roomManager.joinRoom(session, msg.getPayloadAsString());
+                    boolean newRoomCreated = roomManager.joinRoom(session, msg.getPayloadAsString());
+                    if (newRoomCreated) {
+                        broadcastRoomList();
+                    }
                     break;
                 case "CHAT_MESSAGE":
                     roomManager.handleChatMessage(session, msg.getPayloadAsString());
@@ -89,6 +99,11 @@ public class ChatServer extends WebSocketServer {
                 roomManager.handleDisconnect(session);
             }
         }
+    }
+    // 방 목록 갱신
+    private void broadcastRoomList() {
+        Message roomList = new Message("ROOM_LIST", roomManager.getRoomNames());
+        sessionManager.broadcast(roomList.toJson(gson));
     }
 
     // --- 서버 실행 ---

@@ -25,4 +25,10 @@ public class SessionManager {
     public ClientSession getSession(WebSocket conn) {
         return sessionMap.get(conn);
     }
+
+    public void broadcast(String jsonMessage) {
+        for (ClientSession session : sessionMap.values()) {
+            session.sendMessage(jsonMessage);
+        }
+    }
 }
