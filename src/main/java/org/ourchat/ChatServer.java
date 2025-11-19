@@ -68,6 +68,10 @@ public class ChatServer extends WebSocketServer {
                         broadcastRoomList();
                     }
                     break;
+                case "LEAVE_ROOM":
+                    boolean isDeleted = roomManager.leaveSpecificRoom(session, msg.getPayloadAsString());
+                    if (isDeleted) broadcastRoomList();
+                    break;
                 case "CHAT_MESSAGE":
                     roomManager.handleChatMessage(session, msg.getPayloadAsString());
                     break;

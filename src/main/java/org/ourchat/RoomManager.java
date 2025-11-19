@@ -1,10 +1,12 @@
 package org.ourchat;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-// 모든 '방'을 관리하고, 실제 비즈니스 로직을 처리하는 '두뇌'
+// 멀티룸(동시 접속)을 지원하는 RoomManager
 public class RoomManager {
 
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
@@ -17,107 +19,121 @@ public class RoomManager {
     // 1. 닉네임 설정
     public void setNickname(ClientSession session, String nickname) {
         session.setUserId(nickname);
-        // 클라이언트에게 성공 알림
         Message notice = new Message("SYSTEM_NOTICE", "닉네임이 " + nickname + "으로 설정되었습니다.");
         session.sendMessage(notice.toJson(gson));
     }
 
     // 2. 방 입장/생성
     public boolean joinRoom(ClientSession session, String roomName) {
-        // 닉네임이 없으면 방에 참가할 수 없음
         if (session.getUserId() == null || session.getUserId().isEmpty()) {
-            Message error = new Message("ERROR", "닉네임을 먼저 설정해야 합니다.");
-            session.sendMessage(error.toJson(gson));
+            // 에러 처리 (생략 가능)
             return false;
         }
 
         boolean isNewRoom = !rooms.containsKey(roomName);
-
-        // 이미 다른 방에 있다면, 그 방에서 먼저 나옴
-        leaveRoom(session);
-
-        // 방을 찾거나, 없으면 새로 생성 (Thread-safe)
         Room room = rooms.computeIfAbsent(roomName, k -> new Room(roomName));
 
-        // 방에 참가
-        room.join(session);
-        session.setCurrentRoom(room);
+        // 이미 들어간 방인지 체크
+        if (session.getJoinedRooms().contains(room)) {
+            return false; // 이미 접속 중이면 무시
+        }
 
-        // 1. 방 참가자 본인에게 알림
+        // 방 입장 처리
+        room.join(session);
+        session.joinRoom(room);
+
+        // 알림 전송
         Message welcome = new Message("SYSTEM_NOTICE", "'" + roomName + "' 방에 입장했습니다.");
         session.sendMessage(welcome.toJson(gson));
 
-        // 2. 방에 있는 다른 사람들에게 알림
         Message joinNotice = new Message("SYSTEM_NOTICE", session.getUserId() + "님이 입장했습니다.");
-        broadcastToRoom(session, joinNotice, false); // '나'를 제외하고 전송
+        broadcastToRoom(room, joinNotice);
 
         return isNewRoom;
     }
 
-    // 3. 채팅 메시지 처리
-    public void handleChatMessage(ClientSession session, String chatMessage) {
-        Room room = session.getCurrentRoom();
-        if (room == null) {
-            Message error = new Message("ERROR", "방에 먼저 참가해야 합니다.");
-            session.sendMessage(error.toJson(gson));
-            return;
-        }
+    // 3. 특정 방에서 나가기
+    public boolean leaveSpecificRoom(ClientSession session, String roomName) {
+        Room room = rooms.get(roomName);
 
-        // 방에 있는 모든 사람에게 채팅 메시지 전송
-        Message chat = new Message("NEW_MESSAGE",
-                Map.of("sender", session.getUserId(), "message", chatMessage));
-
-        broadcastToRoom(session, chat, true); // '나'를 포함하여 모두에게 전송
-    }
-
-    // 4. 연결 종료 처리
-    public boolean handleDisconnect(ClientSession session) {
-        if (session == null) return false;
-
-        // 방에서 나감
-        return leaveRoom(session);
-    }
-
-    // (내부 헬퍼) 방에서 나가는 로직
-    private boolean leaveRoom(ClientSession session) {
-        Room room = session.getCurrentRoom();
-        if (room != null) {
+        // 방이 존재하고, 내가 그 방에 있을 때만
+        if (room != null && session.getJoinedRooms().contains(room)) {
             room.leave(session);
-            session.setCurrentRoom(null);
+            session.leaveRoom(room); // 세션에서도 제거
 
-            // 방에 남아있는 사람들에게 퇴장 알림
+            // 퇴장 알림
             Message leaveNotice = new Message("SYSTEM_NOTICE", session.getUserId() + "님이 퇴장했습니다.");
-            broadcastToRoom(session, leaveNotice, false);
+            broadcastToRoom(room, leaveNotice);
 
-            // 방이 비었으면 방을 제거
+            // 방이 비었으면 삭제
             if (room.isEmpty()) {
-                rooms.remove(room.getRoomName());
-                return true;
+                rooms.remove(roomName);
+                return true; // 방 삭제됨
             }
         }
         return false;
     }
 
-    // (내부 헬퍼) 방에 메시지 브로드캐스트
-    private void broadcastToRoom(ClientSession sender, Message message, boolean includeSelf) {
-        Room room = sender.getCurrentRoom();
-        if (room == null) return;
+    // 4. 채팅 메시지 처리
+    public void handleChatMessage(ClientSession session, String payloadJson) {
+        try {
+            // 예: { "targetRoom": "1번방", "message": "안녕하세요" }
+            JsonObject json = JsonParser.parseString(payloadJson).getAsJsonObject();
+            String targetRoomName = json.get("targetRoom").getAsString();
+            String msgContent = json.get("message").getAsString();
 
-        String jsonMessage = message.toJson(gson);
+            Room room = rooms.get(targetRoomName);
 
-        if (includeSelf) {
-            room.broadcast(jsonMessage);
-        } else {
-            // 'sender'를 제외하고 모두에게 전송
-            for (ClientSession client : room.getClients()) {
-                if (client != sender) {
-                    client.sendMessage(jsonMessage);
-                }
+            // 방이 존재하고, 내가 그 방에 멤버여야 메시지 전송 가능
+            if (room != null && session.getJoinedRooms().contains(room)) {
+                // 클라이언트가 화면에 그릴 수 있게 데이터 구조화
+                // { "room": "1번방", "sender": "나", "message": "내용" }
+                Map<String, String> chatData = Map.of(
+                        "room", targetRoomName,
+                        "sender", session.getUserId(),
+                        "message", msgContent
+                );
+
+                Message chat = new Message("NEW_MESSAGE", chatData);
+                room.broadcast(chat.toJson(gson));
             }
+        } catch (Exception e) {
+            System.err.println("메시지 전송 에러: " + e.getMessage());
+            // 필요하다면 클라이언트에게 에러 메시지 전송
         }
     }
 
-    // 모든 방의 이름 목록 반환
+    // 5. 연결 종료 처리
+    public boolean handleDisconnect(ClientSession session) {
+        if (session == null) return false;
+
+        boolean anyRoomDeleted = false;
+
+        // 내가 들어간 '모든' 방을 돌면서 하나씩 퇴장 처리
+        // (리스트 복사본을 만들어서 돌리는 것이 안전함)
+        for (Room room : new java.util.ArrayList<>(session.getJoinedRooms())) {
+            room.leave(session);
+            session.leaveRoom(room);
+
+            // 방이 비었으면 삭제
+            if (room.isEmpty()) {
+                rooms.remove(room.getRoomName());
+                anyRoomDeleted = true;
+            }
+
+            // TODO: 연결 끊김 알림을 각 방에 보낼 수도 있음
+        }
+        return anyRoomDeleted; // 하나라도 방이 삭제되었으면 true
+    }
+
+    // 특정 Room 객체에 방송
+    private void broadcastToRoom(Room room, Message message) {
+        if (room != null) {
+            room.broadcast(message.toJson(gson));
+        }
+    }
+
+    // 방 목록 반환
     public java.util.Set<String> getRoomNames() {
         return rooms.keySet();
     }

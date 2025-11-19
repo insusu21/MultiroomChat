@@ -2,11 +2,14 @@ package org.ourchat;
 
 import org.java_websocket.WebSocket;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class ClientSession {
 
     private final WebSocket connection;
     private String userId; // 닉네임
-    private Room currentRoom; // 현재 접속한 방
+    private final Set<Room> joinedRooms = new HashSet<>();// 현재 접속한 방들
 
     public ClientSession(WebSocket connection) {
         this.connection = connection;
@@ -29,12 +32,16 @@ public class ClientSession {
         this.userId = userId;
     }
 
-    public Room getCurrentRoom() {
-        return currentRoom;
+    public void joinRoom(Room room) {
+        joinedRooms.add(room);
     }
 
-    public void setCurrentRoom(Room currentRoom) {
-        this.currentRoom = currentRoom;
+    public void leaveRoom(Room room) {
+        joinedRooms.remove(room);
+    }
+
+    public Set<Room> getJoinedRooms() {
+        return joinedRooms;
     }
 
     public WebSocket getConnection() {
