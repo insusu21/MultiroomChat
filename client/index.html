@@ -54,7 +54,6 @@
         #allRoomList li:hover { background: #007bff; color: white; border-color: #007bff; }
 
         .msg-row { margin: 8px 0; }
-        .room-badge { background: #6c757d; color: white; font-size: 0.7em; padding: 2px 6px; border-radius: 4px; margin-right: 6px; }
         .sender { font-weight: bold; color: #0056b3; margin-right: 5px; }
         .system { color: #888; font-size: 0.85em; text-align: center; margin: 10px 0; }
     </style>
@@ -163,7 +162,7 @@
             div.className = `room-tab ${isActive ? 'active' : ''}`;
             div.onclick = () => selectRoom(roomName);
             div.innerHTML = `
-                <span onclick="selectRoom('${roomName}')">${roomName}</span>
+                <span>${roomName}</span>
                 <span class="close-btn" onclick="leaveRoom('${roomName}')" title="나가기">✕</span>
             `;
             myTabsContainer.appendChild(div);
@@ -232,11 +231,10 @@
         const msg = JSON.parse(event.data);
 
         switch (msg.type) {
-            case "ROOM_LIST": // 전체 방 목록
+            case "ROOM_LIST":
                 const rooms = msg.payload;
                 allRoomListUl.innerHTML = "";
                 if(rooms.length === 0) allRoomListUl.innerHTML = "<li style='cursor:default; background:none; border:none; color:#aaa'>개설된 방 없음</li>";
-
                 rooms.forEach(r => {
                     const li = document.createElement("li");
                     li.textContent = r;
@@ -248,57 +246,65 @@
                 });
                 break;
 
-            case "SYSTEM_NOTICE": // 시스템 알림
-                const noticeText = msg.payload;
-                const sysHtml = `<div class="system">${noticeText}</div>`;
-
-                // 1. 닉네임 설정 완료 시
-                if (noticeText.includes("닉네임이")) {
-                    appendToScreen(sysHtml); // 이건 현재 화면에 그냥 보여줌
-                    document.getElementById("joinRoomButton").disabled = false;
-                    document.getElementById("nicknameInput").disabled = true;
-                    document.getElementById("setNicknameButton").disabled = true;
-                }
-
-                // 2. 방 입장 ("'방이름' 방에 입장했습니다")
-                else if (noticeText.includes("방에 입장했습니다")) {
-                    const match = noticeText.match(/'(.*?)'/);
-                    if (match) {
-                        const newRoom = match[1];
-
-                        // 내가 입장한 경우
-                        if (!noticeText.includes("님이")) {
-                            if (!myJoinedRooms.includes(newRoom)) {
-                                myJoinedRooms.push(newRoom);
-                                // 저장소 초기화
-                                if (!roomMessages[newRoom]) roomMessages[newRoom] = [];
-                                selectRoom(newRoom); // 자동 선택
-                            }
-                        }
-                        // 남이 입장한 경우 -> 해당 방 로그에 추가
-                        else {
-                             processIncomingMessage(newRoom, sysHtml);
-                        }
-                    }
-                }
-                // 3. 방 퇴장
-                else if (noticeText.includes("퇴장했습니다")) {
-                     // 현재 서버는 "[방이름]"을 안 보내주므로, 그냥 현재 보고 있는 방에 띄움 (한계)
-                     // 만약 서버가 [방이름]을 보내주면 processIncomingMessage로 보낼 수 있음.
-                     if(currentTargetRoom) processIncomingMessage(currentTargetRoom, sysHtml);
-                }
-                else {
-                    // 그 외 알림은 현재 방에 표시
-                    if(currentTargetRoom) processIncomingMessage(currentTargetRoom, sysHtml);
+            case "JOINED_ROOM_SUCCESS": // [서버가 보내주는 명시적 입장 성공]
+                const newRoom = msg.payload;
+                if (!myJoinedRooms.includes(newRoom)) {
+                    myJoinedRooms.push(newRoom);
+                    if (!roomMessages[newRoom]) roomMessages[newRoom] = [];
+                    selectRoom(newRoom);
+                    saveState();
                 }
                 break;
 
-            case "NEW_MESSAGE": // 채팅 수신
-                const chat = msg.payload; // {room, sender, message}
-                // HTML 생성
+            case "NEW_MESSAGE": // [일반 채팅]
+                const chat = msg.payload;
                 const html = `<div class="msg-row"><span class="sender">${chat.sender}:</span> ${chat.message}</div>`;
-                // [핵심] 해당 방 저장소로 라우팅
                 processIncomingMessage(chat.room, html);
+                break;
+
+            case "SYSTEM_NOTICE": // [시스템 알림]
+                const noticeText = msg.payload;
+                const sysHtml = `<div class="system">${noticeText}</div>`;
+
+                // 1. 닉네임 설정 (전역 알림)
+                if (noticeText.includes("닉네임이")) {
+                    appendToScreen(sysHtml); // 현재 화면에 표시
+                    document.getElementById("joinRoomButton").disabled = false;
+                    document.getElementById("nicknameInput").disabled = true;
+                    document.getElementById("setNicknameButton").disabled = true;
+                    saveState();
+                }
+
+                // 2. [방이름] 태그가 붙은 메시지 (입장, 퇴장, 강제종료 등 모든 상황)
+                // 서버 수정 덕분에 이제 퇴장 메시지도 여기서 걸러집니다.
+                else if (noticeText.startsWith("[")) {
+                    const match = noticeText.match(/^\[(.*?)\]/); // 대괄호 안의 방 이름 추출
+                    if (match) {
+                        const targetRoom = match[1];
+                        // 내가 그 방에 참여 중일 때만 로그 저장 (화면 섞임 방지)
+                        if (myJoinedRooms.includes(targetRoom)) {
+                            processIncomingMessage(targetRoom, sysHtml);
+                        }
+                    }
+                }
+
+                // 3. '방이름' 방에 입장했습니다 (나의 입장 - Fallback)
+                // JOINED_ROOM_SUCCESS가 혹시 안 올 때를 대비한 코드
+                else if (noticeText.includes("방에 입장했습니다")) {
+                     const match = noticeText.match(/'(.*?)'/);
+                     if (match) {
+                         const rName = match[1];
+                         // 내가 들어간 경우 (방 목록 추가)
+                         if (!noticeText.includes("님이")) {
+                             if (!myJoinedRooms.includes(rName)) {
+                                myJoinedRooms.push(rName);
+                                if (!roomMessages[rName]) roomMessages[rName] = [];
+                                selectRoom(rName);
+                                saveState();
+                             }
+                         }
+                     }
+                }
                 break;
         }
     };

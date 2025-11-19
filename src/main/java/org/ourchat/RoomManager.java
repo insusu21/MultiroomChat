@@ -62,7 +62,7 @@ public class RoomManager {
             session.leaveRoom(room); // 세션에서도 제거
 
             // 퇴장 알림
-            Message leaveNotice = new Message("SYSTEM_NOTICE", session.getUserId() + "님이 퇴장했습니다.");
+            Message leaveNotice = new Message("SYSTEM_NOTICE", "[" + roomName + "] " + session.getUserId() + "님이 퇴장했습니다.");
             broadcastToRoom(room, leaveNotice);
 
             // 방이 비었으면 삭제
