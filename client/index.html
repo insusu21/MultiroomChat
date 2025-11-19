@@ -5,234 +5,332 @@
     <title>인수코드 - 멀티룸 채팅</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: grid;
-            grid-template-rows: auto auto 1fr auto;
-            height: 95vh;
-            margin: 0; padding: 20px; box-sizing: border-box;
-        }
-        h1 { margin-top: 0; }
-
-        /* UI 구역 스타일 */
-        #nicknameSection, #roomSection {
-            margin-bottom: 15px; padding: 15px;
-            background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;
+            font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0;
+            height: 100vh; display: grid; grid-template-rows: auto 1fr;
+            background-color: #f4f6f9;
         }
 
-        /* 방 목록 스타일 (추가됨) */
-        #roomList {
-            list-style: none; padding: 0; margin: 10px 0;
-            display: flex; flex-wrap: wrap; gap: 8px;
+        header {
+            background: white; padding: 15px 20px; border-bottom: 1px solid #ddd;
+            display: flex; flex-direction: column; gap: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
-        #roomList li {
-            background: white; padding: 8px 15px;
-            border: 1px solid #ced4da; border-radius: 20px;
-            cursor: pointer; transition: all 0.2s; font-size: 0.9em;
-        }
-        #roomList li:hover {
-            background: #007bff; color: white; border-color: #007bff; transform: translateY(-2px);
-        }
-        #roomList li.empty {
-            background: transparent; border: none; cursor: default; color: #6c757d;
+        .control-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+        #workspace {
+            display: grid; grid-template-columns: 260px 1fr; overflow: hidden;
         }
 
-        /* 채팅창 스타일 */
+        #sidebar {
+            background: #2c3e50; color: white; padding: 15px;
+            overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+        }
+        .room-tab {
+            padding: 12px; background: #34495e; border-radius: 6px;
+            cursor: pointer; display: flex; justify-content: space-between;
+            align-items: center; transition: 0.2s; font-size: 0.95em;
+        }
+        .room-tab:hover { background: #3e5871; }
+        .room-tab.active { background: #fff; color: #333; font-weight: bold; border-left: 5px solid #007bff; }
+        .close-btn { font-size: 0.8em; opacity: 0.6; padding: 2px 6px; }
+        .close-btn:hover { opacity: 1; color: #ff4d4d; background: rgba(255,255,255,0.8); border-radius: 3px; }
+
+        #mainChatArea { display: flex; flex-direction: column; padding: 20px; background: #fff; }
         #chatOutput {
-            border: 1px solid #ced4da; border-radius: 5px; padding: 15px;
-            overflow-y: scroll; background: #fff; margin-bottom: 10px;
+            flex-grow: 1; border: 1px solid #e9ecef; border-radius: 8px;
+            padding: 20px; margin-bottom: 15px; overflow-y: scroll; background: #f8f9fa;
         }
-        .system { color: #6c757d; font-size: 0.9em; text-align: center; margin: 5px 0; }
-        .error { color: #dc3545; font-weight: bold; text-align: center; }
-        .message { margin: 8px 0; line-height: 1.4; }
-        .sender { font-weight: bold; color: #007bff; margin-right: 5px; }
+        #chatHeader { margin-bottom: 10px; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 10px; }
 
-        /* 입력 컨트롤 스타일 */
-        .input-group { display: flex; gap: 10px; }
-        #chatInput { display: none; } /* 초기엔 숨김 */
-        input { flex-grow: 1; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; }
-        button {
-            padding: 10px 20px; background: #007bff; color: white; border: none;
-            border-radius: 4px; cursor: pointer; font-weight: bold;
+        input { padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+
+        #allRoomList { list-style: none; padding: 0; margin: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+        #allRoomList li {
+            background: #e9ecef; padding: 5px 12px; border-radius: 15px;
+            font-size: 0.85em; cursor: pointer; border: 1px solid #ced4da;
         }
-        button:disabled { background: #6c757d; cursor: not-allowed; }
-        button:hover:not(:disabled) { background: #0056b3; }
+        #allRoomList li:hover { background: #007bff; color: white; border-color: #007bff; }
+
+        .msg-row { margin: 8px 0; }
+        .room-badge { background: #6c757d; color: white; font-size: 0.7em; padding: 2px 6px; border-radius: 4px; margin-right: 6px; }
+        .sender { font-weight: bold; color: #0056b3; margin-right: 5px; }
+        .system { color: #888; font-size: 0.85em; text-align: center; margin: 10px 0; }
     </style>
 </head>
 <body>
 
-<h1>멀티룸 채팅</h1>
-
-<div id="nicknameSection">
-    <div class="input-group">
-        <input type="text" id="nicknameInput" placeholder="사용할 닉네임을 입력하세요">
-        <button id="setNicknameButton">닉네임 설정</button>
+<header>
+    <div class="control-row">
+        <h2 style="margin:0; margin-right:20px;">💬 멀티룸 채팅</h2>
+        <input type="text" id="nicknameInput" placeholder="닉네임">
+        <button id="setNicknameButton">설정</button>
     </div>
-</div>
-
-<div id="roomSection">
-    <h3>🌐 활성화된 채팅방</h3>
-    <ul id="roomList">
-        <li class="empty">서버에 연결 중...</li>
-    </ul>
-
-    <div class="input-group" style="margin-top: 10px;">
-        <input type="text" id="roomInput" placeholder="방 이름을 직접 입력하거나 위에서 선택하세요">
-        <button id="joinRoomButton" disabled>방 참가 / 생성</button>
+    <div class="control-row" style="background:#f8f9fa; padding:10px; border-radius:8px;">
+        <span style="font-weight:bold; color:#555;">🌐 전체 방 목록:</span>
+        <ul id="allRoomList"><li style="color:#aaa">로딩 중...</li></ul>
+        <div style="margin-left:auto; display:flex; gap:5px;">
+            <input type="text" id="roomInput" placeholder="방 이름" style="width:120px;">
+            <button id="joinRoomButton" disabled>참가/생성</button>
+        </div>
     </div>
-</div>
+</header>
 
-<div id="chatOutput">
-    <p class="system">서버 연결 대기 중...</p>
-</div>
+<div id="workspace">
+    <div id="sidebar">
+        <h3 style="margin:0 0 10px 0; border-bottom:1px solid #4b6584; padding-bottom:10px;">📂 내 채팅방</h3>
+        <div id="myTabsContainer">
+            <div style="color:#bdc3c7; font-size:0.9em; text-align:center; padding:20px;">참여 중인 방이 없습니다.</div>
+        </div>
+    </div>
 
-<div id="chatInput" class="input-group">
-    <input type="text" id="messageInput" placeholder="메시지를 입력하세요...">
-    <button id="sendButton">전송</button>
+    <div id="mainChatArea">
+        <div id="chatHeader">채팅방을 선택해주세요</div>
+        <div id="chatOutput"><p class="system">서버 연결 대기 중...</p></div>
+        <div style="display:flex; gap:10px;">
+            <input type="text" id="messageInput" placeholder="왼쪽에서 방을 선택해주세요" disabled style="flex-grow:1;">
+            <button id="sendButton" disabled>전송</button>
+        </div>
+    </div>
 </div>
 
 <script>
     const ws = new WebSocket("ws://localhost:8080");
 
-    // --- DOM 요소 가져오기 ---
+    // --- 상태 변수 ---
+    let currentTargetRoom = null; // 현재 '보고 있는' 방
+    let myJoinedRooms = [];       // 내가 들어간 방 목록
+
+    // 방별 메시지 저장소 (Key: 방이름, Value: HTML문자열 배열)
+    const roomMessages = {};
+
+    // --- DOM 요소 ---
     const chatOutput = document.getElementById("chatOutput");
-    const nicknameInput = document.getElementById("nicknameInput");
-    const setNicknameButton = document.getElementById("setNicknameButton");
-
-    // 방 관련 요소
-    const roomListUl = document.getElementById("roomList"); // [추가됨]
-    const roomInput = document.getElementById("roomInput");
-    const joinRoomButton = document.getElementById("joinRoomButton");
-
-    // 채팅 입력 요소
-    const chatInputDiv = document.getElementById("chatInput");
+    const chatHeader = document.getElementById("chatHeader");
+    const allRoomListUl = document.getElementById("allRoomList");
+    const myTabsContainer = document.getElementById("myTabsContainer");
     const messageInput = document.getElementById("messageInput");
     const sendButton = document.getElementById("sendButton");
 
-    // --- 헬퍼 함수 ---
-    function addLog(message, type = "system") {
-        chatOutput.innerHTML += `<div class="${type}">${message}</div>`;
+    // --- 화면 출력 함수 ---
+    function appendToScreen(html) {
+        const div = document.createElement("div");
+        div.innerHTML = html;
+        chatOutput.appendChild(div);
         chatOutput.scrollTop = chatOutput.scrollHeight;
     }
 
-    function sendMessage(type, payload) {
-        if(ws.readyState === WebSocket.OPEN) {
-            const msg = { type, payload };
-            ws.send(JSON.stringify(msg));
+    // --- [핵심 로직] 메시지 처리 및 분배 ---
+    function processIncomingMessage(roomName, htmlContent) {
+        // 1. 해당 방의 저장소가 없으면 만듦
+        if (!roomMessages[roomName]) {
+            roomMessages[roomName] = [];
+        }
+
+        // 2. 메모리에 저장
+        roomMessages[roomName].push(htmlContent);
+
+        // 3. 만약 내가 '지금 보고 있는 방'이라면 화면에도 바로 그림
+        if (currentTargetRoom === roomName) {
+            appendToScreen(htmlContent);
         }
     }
 
-    // [추가됨] 방 목록을 화면에 그리는 함수
-    function renderRoomList(rooms) {
-        roomListUl.innerHTML = ""; // 기존 목록 초기화
+    // --- 헬퍼: JSON 전송 ---
+    function sendJson(type, payload) {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type, payload }));
+        }
+    }
 
-        if (!rooms || rooms.length === 0) {
-            roomListUl.innerHTML = '<li class="empty">현재 생성된 방이 없습니다. 새로운 방을 만들어보세요!</li>';
+    // --- 사이드바 렌더링 ---
+    function renderMySidebar() {
+        myTabsContainer.innerHTML = "";
+
+        if (myJoinedRooms.length === 0) {
+            myTabsContainer.innerHTML = "<div style='color:#bdc3c7; font-size:0.9em; text-align:center; padding:20px;'>참여 중인 방이 없습니다.<br>위에서 방을 만들어보세요!</div>";
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            messageInput.placeholder = "방에 먼저 참가해주세요";
+            chatHeader.innerText = "채팅방을 선택해주세요";
             return;
         }
 
-        rooms.forEach(roomName => {
-            const li = document.createElement("li");
-            li.textContent = `💬 ${roomName}`; // 아이콘 장식
-
-            // [핵심] 방 클릭 시 자동으로 입력창 채우고 입장 버튼 클릭
-            li.onclick = () => {
-                roomInput.value = roomName;
-                // 닉네임이 설정되어 있어야 입장이 가능하므로 체크
-                if(!joinRoomButton.disabled) {
-                    joinRoomButton.click();
-                } else {
-                    alert("먼저 닉네임을 설정해주세요!");
-                    nicknameInput.focus();
-                }
-            };
-            roomListUl.appendChild(li);
+        myJoinedRooms.forEach(roomName => {
+            const div = document.createElement("div");
+            const isActive = (currentTargetRoom === roomName);
+            div.className = `room-tab ${isActive ? 'active' : ''}`;
+            div.onclick = () => selectRoom(roomName);
+            div.innerHTML = `
+                <span onclick="selectRoom('${roomName}')">${roomName}</span>
+                <span class="close-btn" onclick="leaveRoom('${roomName}')" title="나가기">✕</span>
+            `;
+            myTabsContainer.appendChild(div);
         });
+
+        // 입력창 활성화 상태 갱신
+        if (currentTargetRoom) {
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            messageInput.placeholder = `[${currentTargetRoom}] 방에 메시지 보내기...`;
+            messageInput.focus();
+            chatHeader.innerText = `📂 현재 대화 중: ${currentTargetRoom}`;
+        }
+    }
+
+    // --- [핵심] 방 선택 (탭 클릭) ---
+    function selectRoom(roomName) {
+        currentTargetRoom = roomName;
+
+        // 1. 화면을 깨끗이 지움
+        chatOutput.innerHTML = "";
+
+        // 2. 메모리에 저장된 그 방의 대화 내용만 다시 그림
+        if (roomMessages[roomName]) {
+            roomMessages[roomName].forEach(html => {
+                appendToScreen(html);
+            });
+        } else {
+            // 메시지가 하나도 없는 새 방이면 초기화
+            roomMessages[roomName] = [];
+        }
+
+        renderMySidebar(); // 탭 스타일(Active) 갱신
+    }
+
+    // --- 방 나가기 ---
+    function leaveRoom(roomName) {
+        if (confirm(`'${roomName}' 방을 나가시겠습니까?`)) {
+            sendJson("LEAVE_ROOM", roomName);
+
+            // 목록에서 제거 & 메모리 삭제
+            myJoinedRooms = myJoinedRooms.filter(r => r !== roomName);
+            delete roomMessages[roomName];
+
+            if (currentTargetRoom === roomName) {
+                currentTargetRoom = myJoinedRooms.length > 0 ? myJoinedRooms[0] : null;
+                if(currentTargetRoom) selectRoom(currentTargetRoom);
+                else {
+                    chatOutput.innerHTML = ""; // 남은 방이 없으면 화면 비움
+                    renderMySidebar();
+                }
+            } else {
+                renderMySidebar();
+            }
+        }
     }
 
     // --- WebSocket 이벤트 ---
     ws.onopen = () => {
         // 연결되면 채팅창 초기화
         chatOutput.innerHTML = "";
-        addLog("서버에 연결되었습니다. 닉네임을 설정하세요.");
-    };
-
-    ws.onclose = () => {
-        addLog("서버와 연결이 끊겼습니다.", "error");
-        joinRoomButton.disabled = true;
-        setNicknameButton.disabled = true;
+        appendToScreen("<div class='system'>서버에 연결되었습니다. 닉네임을 설정하세요.</div>");
     };
 
     ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
 
         switch (msg.type) {
-            case "ROOM_LIST":
-                // [추가됨] 서버에서 온 방 목록 배열로 화면 갱신
-                renderRoomList(msg.payload);
+            case "ROOM_LIST": // 전체 방 목록
+                const rooms = msg.payload;
+                allRoomListUl.innerHTML = "";
+                if(rooms.length === 0) allRoomListUl.innerHTML = "<li style='cursor:default; background:none; border:none; color:#aaa'>개설된 방 없음</li>";
+
+                rooms.forEach(r => {
+                    const li = document.createElement("li");
+                    li.textContent = r;
+                    li.onclick = () => {
+                        document.getElementById("roomInput").value = r;
+                        document.getElementById("joinRoomButton").click();
+                    };
+                    allRoomListUl.appendChild(li);
+                });
                 break;
 
-            case "SYSTEM_NOTICE":
-                addLog(msg.payload, "system");
+            case "SYSTEM_NOTICE": // 시스템 알림
+                const noticeText = msg.payload;
+                const sysHtml = `<div class="system">${noticeText}</div>`;
 
-                // 닉네임 설정 성공 시
-                if (msg.payload.includes("닉네임이")) {
-                    joinRoomButton.disabled = false; // 방 참가 버튼 활성화
-                    nicknameInput.disabled = true;   // 닉네임 수정 불가
-                    setNicknameButton.disabled = true;
-                    roomInput.focus(); // 방 입력창으로 포커스 이동
+                // 1. 닉네임 설정 완료 시
+                if (noticeText.includes("닉네임이")) {
+                    appendToScreen(sysHtml); // 이건 현재 화면에 그냥 보여줌
+                    document.getElementById("joinRoomButton").disabled = false;
+                    document.getElementById("nicknameInput").disabled = true;
+                    document.getElementById("setNicknameButton").disabled = true;
                 }
-                // 방 입장 성공 시
-                if (msg.payload.includes("방에 입장했습니다")) {
-                    chatInputDiv.style.display = "flex"; // 채팅 입력창 보이기
-                    messageInput.focus(); // 메시지 입력창으로 포커스 이동
+
+                // 2. 방 입장 ("'방이름' 방에 입장했습니다")
+                else if (noticeText.includes("방에 입장했습니다")) {
+                    const match = noticeText.match(/'(.*?)'/);
+                    if (match) {
+                        const newRoom = match[1];
+
+                        // 내가 입장한 경우
+                        if (!noticeText.includes("님이")) {
+                            if (!myJoinedRooms.includes(newRoom)) {
+                                myJoinedRooms.push(newRoom);
+                                // 저장소 초기화
+                                if (!roomMessages[newRoom]) roomMessages[newRoom] = [];
+                                selectRoom(newRoom); // 자동 선택
+                            }
+                        }
+                        // 남이 입장한 경우 -> 해당 방 로그에 추가
+                        else {
+                             processIncomingMessage(newRoom, sysHtml);
+                        }
+                    }
+                }
+                // 3. 방 퇴장
+                else if (noticeText.includes("퇴장했습니다")) {
+                     // 현재 서버는 "[방이름]"을 안 보내주므로, 그냥 현재 보고 있는 방에 띄움 (한계)
+                     // 만약 서버가 [방이름]을 보내주면 processIncomingMessage로 보낼 수 있음.
+                     if(currentTargetRoom) processIncomingMessage(currentTargetRoom, sysHtml);
+                }
+                else {
+                    // 그 외 알림은 현재 방에 표시
+                    if(currentTargetRoom) processIncomingMessage(currentTargetRoom, sysHtml);
                 }
                 break;
 
-            case "NEW_MESSAGE":
-                const chat = msg.payload;
-                addLog(`<span class="sender">${chat.sender}:</span> ${chat.message}`, "message");
+            case "NEW_MESSAGE": // 채팅 수신
+                const chat = msg.payload; // {room, sender, message}
+                // HTML 생성
+                const html = `<div class="msg-row"><span class="sender">${chat.sender}:</span> ${chat.message}</div>`;
+                // [핵심] 해당 방 저장소로 라우팅
+                processIncomingMessage(chat.room, html);
                 break;
-
-            case "ERROR":
-                addLog(`⚠️ ${msg.payload}`, "error");
-                break;
-
-            default:
-                console.log("알 수 없는 메시지:", msg);
         }
     };
 
-    // --- UI 클릭 이벤트 ---
-    setNicknameButton.onclick = () => {
-        const nickname = nicknameInput.value.trim();
-        if (nickname) {
-            sendMessage("SET_NICKNAME", nickname);
-        } else {
-            alert("닉네임을 입력해주세요.");
-        }
+    // --- 버튼 이벤트 ---
+    document.getElementById("setNicknameButton").onclick = () => {
+        const val = document.getElementById("nicknameInput").value;
+        if(val) sendJson("SET_NICKNAME", val);
     };
 
-    joinRoomButton.onclick = () => {
-        const room = roomInput.value.trim();
-        if (room) {
-            sendMessage("JOIN_ROOM", room);
-        } else {
-            alert("방 이름을 입력하거나 목록에서 선택해주세요.");
-        }
+    document.getElementById("joinRoomButton").onclick = () => {
+        const val = document.getElementById("roomInput").value;
+        if(val) sendJson("JOIN_ROOM", val);
     };
 
     sendButton.onclick = () => {
-        const message = messageInput.value.trim();
-        if (message) {
-            sendMessage("CHAT_MESSAGE", message);
-            messageInput.value = ""; // 입력창 비우기
+        const text = messageInput.value;
+        if (text && currentTargetRoom) {
+            const payloadObj = {
+                targetRoom: currentTargetRoom,
+                message: text
+            };
+            // 이중 JSON 문자열화
+            sendJson("CHAT_MESSAGE", JSON.stringify(payloadObj));
+            messageInput.value = "";
         }
     };
 
-    // 엔터키 지원
-    nicknameInput.addEventListener("keyup", (e) => { if (e.key === "Enter") setNicknameButton.click(); });
-    roomInput.addEventListener("keyup", (e) => { if (e.key === "Enter") joinRoomButton.click(); });
-    messageInput.addEventListener("keyup", (e) => { if (e.key === "Enter") sendButton.click(); });
+    // 엔터키 이벤트
+    document.getElementById("nicknameInput").onkeyup = (e) => { if(e.key==="Enter") document.getElementById("setNicknameButton").click(); };
+    document.getElementById("roomInput").onkeyup = (e) => { if(e.key==="Enter") document.getElementById("joinRoomButton").click(); };
+    document.getElementById("messageInput").onkeyup = (e) => { if(e.key==="Enter") sendButton.click(); };
 
 </script>
 </body>
