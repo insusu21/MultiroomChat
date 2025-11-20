@@ -109,22 +109,27 @@ public class RoomManager {
 
         boolean anyRoomDeleted = false;
 
-        // 내가 들어간 '모든' 방을 돌면서 하나씩 퇴장 처리
-        // (리스트 복사본을 만들어서 돌리는 것이 안전함)
+        // 유저가 참여 중이던 모든 방을 순회하며 퇴장 처리
         for (Room room : new java.util.ArrayList<>(session.getJoinedRooms())) {
+            String roomName = room.getRoomName(); // 방 이름 저장
+
             room.leave(session);
             session.leaveRoom(room);
 
+            // 연결 끊겼을 때 각방에 알림 전송
+            Message leaveNotice = new Message("SYSTEM_NOTICE",
+                    "[" + roomName + "] " + session.getUserId() + "님이 나갔습니다 (연결종료).");
+
+            broadcastToRoom(room, leaveNotice);
+
             // 방이 비었으면 삭제
             if (room.isEmpty()) {
-                rooms.remove(room.getRoomName());
+                rooms.remove(roomName);
                 anyRoomDeleted = true;
             }
-
-            // TODO: 연결 끊김 알림을 각 방에 보낼 수도 있음
         }
-        return anyRoomDeleted; // 하나라도 방이 삭제되었으면 true
-    }
+        return anyRoomDeleted; // 하나라도 방이 삭제되었으면 true 반환
+        }
 
     // 특정 Room 객체에 방송
     private void broadcastToRoom(Room room, Message message) {
